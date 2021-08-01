@@ -1,5 +1,9 @@
 # GoogleDrivePythonLibrary
-This library allows you to easily interact with Drive, as it was a common file system. Create folders, upload files, remove files, list directories and more. Also, it understands string paths, like 'path/to/folder/foo.txt'
+This library allows you to easily interact with Drive, as it was a common file system. 
+Create folders, upload files, remove files, list directories and more. 
+Also, it understands string paths, like 'path/to/folder/foo.txt'
+This is created as a way to notably increase the easiness of the official Google Drive 
+API library, by adding a set of high-level methods.
 
 # References
 * [https://developers.google.com/drive/api/v3/quickstart/python](https://developers.google.com/drive/api/v3/quickstart/python)
