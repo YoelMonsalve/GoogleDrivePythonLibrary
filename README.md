@@ -5,12 +5,12 @@ Also, it understands string paths, like 'path/to/folder/foo.txt'
 This is created as a way to notably increase the easiness of the official Google Drive 
 API library, by adding a set of high-level methods.
 
-# References
+## References
 * [https://developers.google.com/drive/api/v3/quickstart/python](https://developers.google.com/drive/api/v3/quickstart/python)
 * [https://developers.google.com/drive/api/v3/reference/](https://developers.google.com/drive/api/v3/reference/)
 
-# Methods
-## Low level methods
+## Methods
+### Low level methods
 * Init a service from your client_secret ([reference](https://developers.google.com/drive/api/v3/quickstart/python))
 * List all files (folders are also considered files) matching a query ([reference](https://developers.google.com/drive/api/v3/reference/files/list))
 * List all entries under a directory, understanding a string path syntax (e.g. 'path/to/folder/')
@@ -21,7 +21,7 @@ API library, by adding a set of high-level methods.
 * getFileNameById: get a file name from its ID.
 * getMimeTypeById: get a file MIME type from its ID.
 
-## High level methods
+### High level methods
 * `getFileId`: get a file ID from string path.
 * `serchFile`: return the basic attributes of a file (id, name, size, mimeType, modifiedTime, parents) from a string path.
 * `copyToFolder`: copy a file to another folder. This understands string paths.
