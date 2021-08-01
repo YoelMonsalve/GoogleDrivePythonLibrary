@@ -25,6 +25,6 @@ This library allows you to easily interact with Drive, as it was a common file s
 * `rename`: rename a file
 * `createFolder`: create a folder under the root location of Drive. Understands string paths, and you can created nested folder in a way: e.g. `createFolder('/my/new/folder')` will create a new folder root->my->new->folder
 * `uploadFile`: upload a file to an existing remote folder, allowing you to specify a different name. Example, `upload_file('foo.txt','foo2.txt', dest='my/folder')` will create the new file `my/folder/foo2.txt` with the content of `foo.txt`
-* `remove`: remove a file by string path, e.g. `remove('/my/path/foo.txt`)
+* `remove`: remove a file by string path, e.g. `remove('/my/path/foo.txt')`
 * `sync`: automatically synchronize a local folder with a remote drive folder. I will traverse recursively the local folder, recreating the folders structure in the remote, and uploading/updating files if size is different or modification time is newer in local. Example: `sync('my/local/folder','/remote/folder/')`. In this context, the dealing `/` in the remote path stands for the root folder of Drive.
 
