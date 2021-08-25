@@ -6,26 +6,29 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.http import MediaFileUpload
 
+import sys       # sys.path
 import os        # os.path
 import stat      # S_IRUSR
 import re        # regex
 from datetime import datetime
 import threading
 from time import sleep
-
 from pprint import pprint
+
+# this is to include another sources in this module
+sys.path.append(os.path.dirname(__file__))
 from _enum import MIME_TYPES
 
 __author__   = "Yoel Monsalve"
 __mail__     = "yymonsalve@gmail.com"
 __date__     = "July, 2021"
-__modified__ = "2021.07.31"
-__github__   = "https://github.com/YoelMonsalve/GoogleDrivePythonLibrary/"
+__modified__ = "2021.08.01"
+__github__   = "github.com/YoelMonsalve/GoogleDrivePythonLibrary"
 
 """
 Requirements:
 
-pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+pip3 install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
 """
 
 # If modifying these scopes, delete the file token.json.
@@ -174,9 +177,9 @@ class GoogleDriveAPI(object):
             else:
                 parent = self.getFileId(path, attr=['mimeType'])
                 if not parent:
-                    raise Exception(f"{self.name}.list_directory: File not found")
+                    raise Exception(f"{self.name}.list_directory: File not found: '{path}'")
                 elif parent.get('mimeType','') != MIME_TYPE_FOLDER:
-                    raise Exception(f"{self.name}.list_directory: It is not a directory")
+                    raise Exception(f"{self.name}.list_directory: It is not a directory: '{path}'")
                 parentId = parent['id']
         else:
             parentId = fileId
@@ -255,22 +258,27 @@ class GoogleDriveAPI(object):
         """
         return self.delete_files(name=name, mimeType=MIME_TYPE_FOLDER, parentId=parentId)
 
-    def remove(self, path = '', prompt = True):
+    def remove(self, path = '', prompt = True, silent = False):
         """Remove a file, given its path. The file can be a normal file, or a directory.
         If it is a directory, the entire folder and all its content will be removed (be careful!)
         The method recognizes paths like /path/to/folder', or '/path/to/folder/foo.txt'
 
-        @param path String. The path to the file to be removed.
+        @param path   String. The path to the file to be removed.
+        @param silent Bool. If True, don't raise Exception if the file doesn't exist.
+                      Implies prompt = False.
         @return None.
         @raise Exception, if the files does not exist.
         """
 
+        if silent: prompt = False        # silent implies not prompt
+
         fileId = self.getFileId(path)
         if not fileId:
-            raise Exception(f"{self.name}.remove: File not found")
+            if silent:
+                return
+            else:
+                raise Exception(f"{self.name}.remove: File not found '{path}'")
         
-        
-        print(F"remove: about to delete \'{self.getFileNameById(fileId)}\', ID={fileId}")
         if prompt:
             ans = input(f"delete '{path}' [y]es/[n]o? This action cannot be undone: ")
             if ans.upper() == 'Y':
@@ -338,6 +346,9 @@ class GoogleDriveAPI(object):
         of attributes (e.g. attr = ['mimeType', 'size']), then those attributes (plus the ID)
         will be appended to the response and returned as in by the method get().
 
+        NOTE: if the name contains '/', you must escape it with '\/' 
+        e.g. 'file/a' -> 'file\/a'
+
         @param path String. The path of the Drive file to be located.
         @param attr (optional) List. A list of attributes to be retrieved if success.
         @return     If no attr is passed, returns the ID of the file on success, or an empty string 
@@ -348,6 +359,16 @@ class GoogleDriveAPI(object):
         # remove dealing '/', e.g. '/path/to/my/folder'
         if path[0] == '/': path = path[1:]
         if not path: return
+
+        # recognizing the escape character \/
+        # bug 2021.08.1
+        # as wildcard ('*') is not allowed in a file name, we will replace
+        # temporarily the '\/' by '*', then split by '/' and newly 
+        # replace back '*' by '/'
+        if '*' in path:
+            raise Exception(f"{self.name}.getFileId: path cannot contain wildcard characters ('*')")
+        path = path.replace("\\/", '*')    # using "\\/" to avoid ambiguity
+
         folders = path.split('/')
         if folders[-1] == '':
             # if the path is ended with '/', e.g. 'path/to/my/folder/'
@@ -355,6 +376,8 @@ class GoogleDriveAPI(object):
         if not folders: return
         parentId = "root"                 # start search in the root folder
         for folder in folders:            # descend through each folder in the path
+            # converting '*' into '/'
+            folder = folder.replace("*", "/")
             if not parentId: 
                 # not found
                 return '' if not attr else {}
@@ -587,7 +610,7 @@ class GoogleDriveAPI(object):
             if path[0] == '/': path = path[1:]
             if path[-1] == '/': path = path[:-1]
         if not path: 
-            raise Exception(f"{self.name}.createFolder: Incorrect path")
+            raise Exception(f"{self.name}.createFolder: Incorrect path: '{path}'")
         
         v = path.split('/', 1)
         a = v[0]
@@ -596,13 +619,20 @@ class GoogleDriveAPI(object):
         else:
             b = None
 
+        # --- debug ---
         # is 'a' child of parentId ?
         #print(f"create recursively:  a='{a}', b='{b}'")
+        #
         q = f"name='{a}' and '{parentId}' in parents"
+        # --- debug ---
         #print(f"query: {q}")
+
         r = self.list_all_files(query=q, attr='id')
         if not r:
-            # create a as a child of parentId
+
+            # --- debug ---
+            #print(f"....create '{a}' as a child of {parentId}")
+            #
             file_metadata = {
                 'name': a,
                 'mimeType': 'application/vnd.google-apps.folder'
@@ -624,7 +654,6 @@ class GoogleDriveAPI(object):
                 removeParents=previous_parents,
                 fields='id, parents'
                 ).execute()
-
             parentId = file.get('id')
         else:
             parentId = r[0]['id']
@@ -632,15 +661,21 @@ class GoogleDriveAPI(object):
         # now, parentId is the id of 'a'
         # then, call recursively searching for the child 'b' of 'a'
         if b:
-            self.createFolderRecursively(b, parentId)
+            return self.createFolderRecursively(b, parentId)
+        else:
+            return parentId
 
     def sync(self, local_path='', remote_path='', regex = '',
         recursion_level = 1, max_recursion_level = 10):
-        """Synchronize local and remote path. Traverses recursively the local directory,
+        """Synchronize local and remote path. Traverses recursively the local directory (*),
         recreates the directory structure in the remote path, and copies only the files
-        more recently modified, or with a larger size
-        @param local_path String.
-        @param remote_path String.
+        more recently modified, or with a larger size.
+
+        (*)NOTE: if the local_path corresponds to regular file (instead of a directory) it will
+        synchronize that single file to the remote path.
+
+        @param local_path String. The full path of the source folder.
+        @param remote_path String. The path of the remote folder.
         @param regex (optional) String. Only sync the local files matching regex.
                      e.g. regex = '.*\.txt$' will match 'foo.txt', but not 'foo.csv'
         @param max_recursion_level Int. Max recursion level to look into it. Default 10.
@@ -653,21 +688,20 @@ class GoogleDriveAPI(object):
 
         if recursion_level > max_recursion_level: return
 
+        # NOTE.- 2021.08.24
+        # CAUTION: Removing trailing / to all paths.
+        # As the program doesn't distinguish between folder/foo and folder/foo/, and
+        # keeping this trailing can bring to folder/foo//folder2 while concatenation
+        # with '/' (!!!)
+        if local_path[-1] == '/': local_path = local_path[:-1]
+        if remote_path[-1] == '/': remote_path = remote_path[:-1]
         print(F"Syncing [Local]:{local_path} to [Drive]:{remote_path}")
 
-        if regex:
-            matcher = re.compile(regex)
-        else:
-            matcher = None
-
-        if not os.path.exists(local_path) or not os.path.isdir(local_path):
-            raise Exception(f"{self.name}.sync: Local directory not found")
-
-        # list the content of the local folder
-        local_files = os.listdir(local_path)
-
+        if not os.path.exists(local_path):
+            raise Exception(f"{self.name}.sync: Local path not found")
+        
         # try creating the remote folder (is not exist), otherwise
-        # to list its content
+        # list its content
         r = self.searchFile(remote_path)
         if not r or r.get('mimeType') != MIME_TYPE_FOLDER:
             # NOTE: if the file exists but it is a regular file, then it will create a
@@ -680,15 +714,35 @@ class GoogleDriveAPI(object):
         else:
             remoteFolderId = r['id']
 
+        if os.path.isfile(local_path):
+            # if the source is a file
+            self._sync_file(local_path, remote_path)
+            return
+        elif not os.path.isdir(local_path):
+            # is it is not a file, neither a directory: fail
+            raise Exception(f"{self.name}.sync: Local path is not a directory")
+
+        # otherwise, the source is a directory ...
+        # list the content of the local directory
+        local_files = os.listdir(local_path)
+
+        # list the content of the remote directory
         remote_files = self.list_directory(fileId = remoteFolderId)
 
+        # regex matcher
+        if regex:
+            matcher = re.compile(regex)
+        else:
+            matcher = None
+
         for entry in local_files:
-            
+
             local_file = local_path + '/' + entry
             if os.path.isdir(local_path + '/' + entry):
                 self.sync(local_path + '/' + entry, remote_path + '/' + entry, 
                     regex= regex,
-                    recursion_level = recursion_level + 1, max_recursion_level = max_recursion_level)
+                    recursion_level = recursion_level + 1, 
+                    max_recursion_level = max_recursion_level)
             elif os.path.isfile(local_path + '/' + entry):
                 # upload this file
                 #print(f"match [{regex}]? {not not matcher.match(local_file)}")
@@ -696,28 +750,84 @@ class GoogleDriveAPI(object):
                     # if regex is given, omit the files not matching the pattern
                     continue
                 
-                r = self.searchFile(remote_path + '/' + entry)
-                if not r:
-                    print(f">> uploading '{local_file}'")
-                    self.upload_file(origin = local_file, filename = os.path.basename(local_file), 
-                        dest = remote_path)
-                else:
-                    # file exists, check timestamp and size
-                    _fstat = os.stat(local_file)
+                print(f"CALL _sync_file({local_file}, {remote_path})")
+                self._sync_file(local_file, remote_path)
 
-                    remote_mtime = datetime.strptime(r['modifiedTime'], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()
-                    UTC_OFFSET_TIMEDELTA = datetime.utcnow() - datetime.now()
-                    # NOTE: local mtime in UTC (!)
-                    local_mtime  = (datetime.fromtimestamp(_fstat.st_mtime) + UTC_OFFSET_TIMEDELTA).timestamp()
-                    
-                    remote_size  = r['size']
-                    local_size   = _fstat.st_size
-                    if local_size != int(remote_size) or local_mtime > remote_mtime:
-                        print(f"size: [local]{local_size} [remote]{remote_size}")
-                        print(f"mtime: [local]{datetime.fromtimestamp(local_mtime)} [remote]{datetime.fromtimestamp(remote_mtime)}")
-                        print(f">> updating '{local_file}'")
-                        self.upload_file(origin = local_file, filename = os.path.basename(local_file), 
-                            dest = remote_path)
-                    
+    def _sync_file(self, local_file, dest):
+        """Auxiliary function to sync a single file (not a folder).
+        If the file does not exist in the destination, it will be created.
+        If a file with that name actually exists, then it will update based in
+        a criteria: 
+          - if the sizes between local and remote are different, or
+          - if the modification time is newer in the local file
+
+        @param local_file String. The full path of the source file.
+        @param dest       String. The path of the destination folder.
+        @ return          None
+        """
+        if not local_file or not dest: return
+
+        # inspect the destination
+        filename    = os.path.basename(local_file)
+        remote_name = dest + '/' + filename
+        r = self.searchFile(remote_name)
+        if not r:
+            print(f">> uploading '{local_file}' to '{remote_name}")
+            self.upload_file(origin = local_file, filename = filename, 
+                dest = dest)
+        else:
+
+            # file exists, check timestamp and size
+            _fstat = os.stat(local_file)
+
+            """ NOTE: how to convert from localtime to utctime
+            https://stackoverflow.com/questions/79797/how-to-convert-local-time-string-to-utc
+
+            Option 1 .
+            >>> import datetime
+            >>> utc_datetime = datetime.datetime.utcnow()
+            >>> utc_datetime.strftime("%Y-%m-%d %H:%M:%S")
+            '2010-02-01 06:59:19
+
+            Option 2.
+            NOTE - If any of your data is in a region that uses DST, use pytz and take a look at John Millikin's answer.
+
+            If you want to obtain the UTC time from a given string and your lucky enough to be in a region in the world that either doesn't use DST, or you have data that is only offset from UTC without DST applied:
+
+            --> using local time as the basis for the offset value:
+
+            >>> # Obtain the UTC Offset for the current system:
+            >>> UTC_OFFSET_TIMEDELTA = datetime.datetime.utcnow() - datetime.datetime.now()
+            >>> local_datetime = datetime.datetime.strptime("2008-09-17 14:04:00", "%Y-%m-%d %H:%M:%S")
+            >>> result_utc_datetime = local_datetime + UTC_OFFSET_TIMEDELTA
+            >>> result_utc_datetime.strftime("%Y-%m-%d %H:%M:%S")
+            '2008-09-17 04:04:00'
+
+            >>> UTC_OFFSET = 10
+            >>> result_utc_datetime = local_datetime - datetime.timedelta(hours=UTC_OFFSET)
+            >>> result_utc_datetime.strftime("%Y-%m-%d %H:%M:%S")
+            '2008-09-17 04:04:00'
+
+            Option 3.
+            >>> import datetime
+
+            >>> timezone_aware_dt = datetime.datetime.now(datetime.timezone.utc)
+            """
+
+            remote_mtime = datetime.strptime(r['modifiedTime'], "%Y-%m-%dT%H:%M:%S.%fZ").timestamp()
+            UTC_OFFSET_TIMEDELTA = datetime.utcnow() - datetime.now()
+            # NOTE: local mtime in UTC (!)
+            local_mtime  = (datetime.fromtimestamp(_fstat.st_mtime) + UTC_OFFSET_TIMEDELTA).timestamp()
+            
+            remote_size  = r['size']
+            local_size   = _fstat.st_size
+            if local_size != int(remote_size) or local_mtime > remote_mtime:
+                print(f"size: [local]{local_size} [remote]{remote_size}")
+                print(f"mtime: [local]{datetime.fromtimestamp(local_mtime)} [remote]{datetime.fromtimestamp(remote_mtime)}")
+                print(f">> updating '{local_file}'")
+                self.remove(path = remote_name, prompt = False)
+                self.upload_file(origin = local_file, filename = os.path.basename(local_file), 
+                    dest = dest)
+
     def __del__(self):
         pass
